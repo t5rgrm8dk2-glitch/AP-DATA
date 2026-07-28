@@ -456,11 +456,9 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const DB_KEY = 'luminarias_db_v2';
 let usuario = '';
 
-
-// ---- STORAGE FALLBACK (funciona con file:// y sin localStorage) ----
+// ---- STORAGE FALLBACK para config pequeña (nombre/webhook) — sigue usando localStorage, pesa nada ----
 const _mem = {};
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch(e) { return _mem[k]||null; } },
@@ -468,8 +466,79 @@ const store = {
   remove(k) { try { localStorage.removeItem(k); } catch(e) { delete _mem[k]; } }
 };
 
+// ---- IndexedDB (almacenamiento de los registros, sin el límite de ~5MB de localStorage) ----
+const IDB_NAME = 'luminarias_idb';
+const IDB_STORE = 'registros';
+let _idbPromise = null;
+
+function openIDB() {
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return _idbPromise;
+}
+
+async function idbGetAll() {
+  try {
+    const db = await openIDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.error('Error leyendo IndexedDB:', e);
+    return [];
+  }
+}
+
+// Reemplaza TODO el contenido del object store por el array recibido (borra + inserta todo en una sola transacción)
+async function idbReplaceAll(records) {
+  try {
+    const db = await openIDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const os = tx.objectStore(IDB_STORE);
+      os.clear();
+      records.forEach(r => os.put(r));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    return true;
+  } catch (e) {
+    console.error('Error guardando en IndexedDB:', e);
+    return false;
+  }
+}
+
+async function idbClear() {
+  try {
+    const db = await openIDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    return true;
+  } catch (e) {
+    console.error('Error limpiando IndexedDB:', e);
+    return false;
+  }
+}
+
 // ---- INIT ----
-window.onload = () => {
+window.onload = async () => {
   usuario = store.get('lum_usuario') || '';
   if (usuario) {
     document.getElementById('modalUsuario').classList.remove('open');
@@ -481,6 +550,9 @@ window.onload = () => {
 
   const wh = store.get('lum_webhook') || '';
   document.getElementById('webhookUrl').value = wh;
+
+  // Cargar todos los registros desde IndexedDB a memoria antes de renderizar
+  dbCache = await idbGetAll();
 
   updateSyncBar();
   renderLista();
@@ -747,7 +819,8 @@ function procesarFoto(input) {
   reader.onload = function(e) {
     const img = new Image();
     img.onload = function() {
-      // Redimensionar/comprimir para no reventar el límite de localStorage (~5MB)
+      // Redimensionar/comprimir para que la app siga rápida y los ZIP/Excel no pesen demasiado
+      // (con IndexedDB ya no hay límite de ~5MB, pero igual conviene no guardar fotos gigantes)
       const MAX_DIM = 1280;
       let w = img.width, h = img.height;
       if (w > MAX_DIM || h > MAX_DIM) {
@@ -782,10 +855,16 @@ function eliminarFoto() {
 }
 
 // ---- DB ----
-function getDB() { try { return JSON.parse(store.get(DB_KEY)) || []; } catch { return []; } }
-function saveDB(data) {
-  const ok = store.set(DB_KEY, JSON.stringify(data));
+// dbCache vive en memoria (rápido, síncrono) y se respalda en IndexedDB en cada cambio.
+let dbCache = [];
+function getDB() { return dbCache; }
+async function saveDB(data) {
+  dbCache = data;
   document.getElementById('totalBadge').textContent = data.length;
+  const ok = await idbReplaceAll(data);
+  if (!ok) {
+    showToast('⚠️ No se pudo guardar en el almacenamiento del dispositivo. Espacio insuficiente o navegador en modo privado.', 'error');
+  }
   updateSyncBar();
   return ok;
 }
@@ -823,7 +902,7 @@ async function guardar() {
   // Guardar local primero
   const db = getDB();
   db.push(registro);
-  const persistido = saveDB(db);
+  const persistido = await saveDB(db);
 
   if (!persistido) {
     showToast('⚠️ No hay espacio de almacenamiento — el registro NO se guardó de forma permanente. Envíalo a la nube o libera espacio (Config → Borrar datos locales antiguos).', 'error');
@@ -878,7 +957,7 @@ async function sendToCloud(registro) {
     const idx = db.findIndex(r => r.id === registro.id);
     if (idx !== -1) {
       db[idx].syncStatus = res.ok ? 'synced' : 'error';
-      saveDB(db);
+      await saveDB(db);
     }
 
     if (res.ok) {
@@ -893,7 +972,7 @@ async function sendToCloud(registro) {
   } catch (e) {
     const db = getDB();
     const idx = db.findIndex(r => r.id === registro.id);
-    if (idx !== -1) { db[idx].syncStatus = 'error'; saveDB(db); }
+    if (idx !== -1) { db[idx].syncStatus = 'error'; await saveDB(db); }
     showToast('📵 Sin internet — guardado local', 'warn');
     updateSyncBar();
     return false;
@@ -1031,32 +1110,32 @@ function renderLista() {
   cont.innerHTML = html;
 }
 
-function eliminar(id) {
+async function eliminar(id) {
   if (!confirm('¿Eliminar este registro?')) return;
   const db = getDB().filter(r => r.id !== id);
-  saveDB(db);
+  await saveDB(db);
   renderLista();
   renderExportar();
   showToast('🗑 Eliminado', 'error');
 }
 
-function limpiarDB() {
+async function limpiarDB() {
   if (!confirm('¿Borrar TODOS los datos locales? Los datos ya enviados a OneDrive no se borran.')) return;
-  store.remove(DB_KEY);
-  saveDB([]);
+  await idbClear();
+  await saveDB([]);
   renderLista();
   renderExportar();
   showToast('🗑 Datos locales borrados', 'error');
 }
 
-function eliminarRegistrosHoy() {
+async function eliminarRegistrosHoy() {
   const hoy = new Date().toISOString().split('T')[0];
   const db = getDB();
   const cantidadHoy = db.filter(r => r.fecha === hoy).length;
   if (!cantidadHoy) { showToast('No hay registros de hoy', 'warn'); return; }
   if (!confirm(`¿Eliminar los ${cantidadHoy} registro(s) de hoy (${fmtDate(hoy)})? Esta acción no se puede deshacer.`)) return;
   const nuevaDB = db.filter(r => r.fecha !== hoy);
-  saveDB(nuevaDB);
+  await saveDB(nuevaDB);
   renderLista();
   renderExportar();
   showToast('🗑 Registros de hoy eliminados', 'error');
