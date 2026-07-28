@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<link rel="manifest" href="manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#1a1f2e">
+<title>Registro de Luminarias</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1f2e;
+    --surface2: #242938;
+    --border: #2e3650;
+    --accent: #f5a623;
+    --accent2: #e8912a;
+    --text: #e8ecf4;
+    --text2: #8b93a8;
+    --success: #2ecc71;
+    --danger: #e74c3c;
+    --warn: #f39c12;
+    --radius: 12px;
+    --font: 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 80px; }
+
+  header {
+    background: var(--surface);
+    border-bottom: 2px solid var(--accent);
+    padding: 14px 18px;
+    display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-size: 22px; }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header small { font-size: 11px; color: var(--text2); display: block; }
+  .badge { margin-left: auto; background: var(--accent); color: #000; border-radius: 20px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
+
+  /* SYNC INDICATOR */
+  .sync-bar {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 18px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px;
+  }
+  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text2); flex-shrink: 0; }
+  .sync-dot.ok { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .sync-dot.err { background: var(--danger); }
+  .sync-dot.syncing { background: var(--accent); animation: pulse 1s infinite; }
+  .sync-dot.pending { background: var(--warn); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .sync-label { flex: 1; color: var(--text2); }
+  .sync-pending-count { background: var(--warn); color: #000; border-radius: 10px; padding: 2px 7px; font-size: 11px; font-weight: 700; display: none; }
+  .btn-retry { background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; color: var(--accent); font-size: 11px; font-weight: 600; cursor: pointer; display: none; }
+
+  .tabs {
+    display: flex; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 95px; z-index: 99;
+  }
+  .tab { flex: 1; padding: 12px 8px; text-align: center; font-size: 13px; font-weight: 600; color: var(--text2); cursor: pointer; border-bottom: 3px solid transparent; transition: all .2s; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .section { display: none; padding: 16px; }
+  .section.active { display: block; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 14px; }
+  .card-title { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 14px; }
+
+  .field { margin-bottom: 13px; }
+  .field label { display: block; font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .5px; }
+  .field input, .field select {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 11px 14px; color: var(--text); font-size: 15px;
+    font-family: var(--font); outline: none; transition: border .2s; -webkit-appearance: none;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field select option { background: var(--surface2); }
+
+  .gps-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+  .gps-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text2); flex-shrink: 0; transition: background .3s; }
+  .gps-dot.ok { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  .gps-dot.err { background: var(--danger); }
+  .gps-dot.loading { background: var(--accent); animation: pulse 1s infinite; }
+  .gps-text { font-size: 13px; color: var(--text2); flex: 1; }
+  .gps-text strong { display: block; color: var(--text); font-size: 12px; font-family: monospace; }
+  .btn-gps { background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .btn-gps-mode { background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px; color: var(--text2); font-size: 12px; font-weight: 600; cursor: pointer; flex: 1; transition: all .2s; }
+  .btn-gps-mode.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #panelGPSManual .gps-box { flex-direction: column; align-items: stretch; }
+  .foto-placeholder { border: 2px dashed var(--border); border-radius: 8px; padding: 20px; text-align: center; color: var(--text2); font-size: 13px; margin-top: 8px; }
+
+  .btn { width: 100%; padding: 14px; border: none; border-radius: var(--radius); font-size: 15px; font-weight: 700; cursor: pointer; transition: transform .1s; font-family: var(--font); margin-bottom: 10px; }
+  .btn:active { transform: scale(.98); }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-success { background: var(--success); color: #000; }
+  .btn-danger-outline { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+  .btn-discreet { background: transparent; border: none; color: var(--text2); font-size: 12px; font-weight: 600; cursor: pointer; padding: 8px; text-align: center; width: 100%; text-decoration: underline; text-underline-offset: 2px; font-family: var(--font); margin-top: 4px; }
+  .btn-discreet:active { opacity: .6; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 16px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 10px; text-align: center; }
+  .stat-num { font-size: 24px; font-weight: 800; color: var(--accent); }
+  .stat-label { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+  .day-group { margin-bottom: 20px; }
+  .day-header { font-size: 12px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .8px; padding: 8px 0; border-bottom: 1px solid var(--border); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .day-count { background: var(--surface2); border-radius: 12px; padding: 2px 8px; font-size: 11px; }
+
+  .record { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 8px; display: flex; gap: 12px; align-items: flex-start; }
+  .record.pending-sync { border-color: var(--warn); }
+  .record.synced { border-color: #2e3650; }
+  .record-num { background: var(--accent); color: #000; border-radius: 6px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
+  .record-info { flex: 1; min-width: 0; }
+  .record-sticker { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .record-meta { font-size: 12px; color: var(--text2); line-height: 1.6; }
+  .record-coords { font-family: monospace; font-size: 11px; color: var(--text2); margin-top: 4px; }
+  .sync-status-chip { display: inline-block; font-size: 10px; font-weight: 700; border-radius: 8px; padding: 2px 7px; margin-top: 4px; }
+  .chip-synced { background: rgba(46,204,113,.15); color: var(--success); }
+  .chip-pending { background: rgba(243,156,18,.15); color: var(--warn); }
+  .chip-error { background: rgba(231,76,60,.15); color: var(--danger); }
+  .btn-del { background: transparent; border: none; color: var(--danger); font-size: 18px; cursor: pointer; padding: 4px; flex-shrink: 0; }
+
+  /* CONFIG */
+  .config-section { margin-bottom: 20px; }
+  .config-title { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .6px; }
+  .webhook-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; color: var(--text); font-size: 13px; font-family: monospace; outline: none; transition: border .2s; word-break: break-all; }
+  .webhook-input:focus { border-color: var(--accent); }
+  .info-box { background: var(--surface2); border-left: 3px solid var(--accent); border-radius: 6px; padding: 12px 14px; font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 14px; }
+  .info-box strong { color: var(--text); }
+  .step { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+  .step-num { background: var(--accent); color: #000; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; margin-top: 1px; }
+  .step-text { font-size: 13px; color: var(--text2); line-height: 1.5; }
+  .step-text strong { color: var(--text); display: block; margin-bottom: 2px; }
+  .code-block { background: #0a0d14; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11px; color: #7ec8e3; margin-top: 6px; overflow-x: auto; white-space: pre; }
+
+  /* EXPORT */
+  .export-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 12px; }
+  .export-day-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .export-day-sub { font-size: 13px; color: var(--text2); margin-bottom: 14px; }
+  .btn-export { background: var(--accent); color: #000; border: none; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer; width: 100%; margin-bottom: 8px; }
+  .btn-export-all { background: var(--surface2); color: var(--text); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer; width: 100%; }
+
+  .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface2); border: 1px solid var(--border); border-radius: 40px; padding: 10px 20px; font-size: 14px; font-weight: 600; opacity: 0; transition: all .3s; z-index: 999; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.success { border-color: var(--success); color: var(--success); }
+  .toast.error { border-color: var(--danger); color: var(--danger); }
+  .toast.warn { border-color: var(--warn); color: var(--warn); }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: none; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: 100%; max-width: 360px; }
+  .modal h2 { font-size: 18px; margin-bottom: 8px; }
+  .modal p { font-size: 14px; color: var(--text2); margin-bottom: 18px; }
+  .modal input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; color: var(--text); font-size: 15px; font-family: var(--font); outline: none; margin-bottom: 14px; }
+  .modal input:focus { border-color: var(--accent); }
+
+  .empty { text-align: center; padding: 48px 20px; color: var(--text2); }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+
+<header>
+  <span class="logo">💡</span>
+  <div>
+    <h1>Registro de Luminarias</h1>
+    <small id="headerUser">Cargando...</small>
+  </div>
+  <span class="badge" id="totalBadge">0</span>
+</header>
+
+<!-- SYNC STATUS BAR -->
+<div class="sync-bar">
+  <div class="sync-dot" id="syncDot"></div>
+  <span class="sync-label" id="syncLabel">Sin conexión a la nube — configura el webhook</span>
+  <span class="sync-pending-count" id="pendingCount"></span>
+  <button class="btn-retry" id="btnRetry" onclick="retrySend()">↻ Reintentar</button>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('registro')">📋 Registrar</div>
+  <div class="tab" onclick="switchTab('lista')">📄 Lista</div>
+  <div class="tab" onclick="switchTab('exportar')">📊 Exportar</div>
+  <div class="tab" onclick="switchTab('config')">⚙️ Config</div>
+  <div class="tab" onclick="switchTab('mapa')">🗺️ Mapa</div>
+</div>
+
+<!-- REGISTRO -->
+<div class="section active" id="tab-registro">
+  <div class="card">
+    <div class="card-title">⚡ Datos de la Luminaria</div>
+    <div class="field">
+      <label>Fecha</label>
+      <input type="date" id="fecha">
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label>Transformador</label>
+        <input type="text" id="transformador" placeholder="Ej: TR-045">
+      </div>
+      <div class="field">
+        <label>Potencia (W)</label>
+
+        <input type="number" id="potencia" placeholder="150">
+      </div>
+    </div>
+    <div class="field">
+      <label>Número de Sticker</label>
+      <input type="text" id="sticker" placeholder="Ej: LUM-2024-001" style="font-size:17px;letter-spacing:.5px">
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label>Tipo</label>
+        <select id="tipo">
+          <option value="">Tipo...</option>
+          <option>LED</option>
+          <option>Sodio</option>
+          <option>Mercurio</option>
+          <option>Fluorescente</option>
+          <option>Otro</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Estado</label>
+        <select id="estado">
+          <option value="">Estado...</option>
+          <option>Bueno</option>
+          <option>Regular</option>
+          <option>Malo</option>
+          <option>Sin Funcionar</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>Observaciones</label>
+      <input type="text" id="obs" placeholder="Opcional...">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📍 Coordenadas GPS</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn-gps-mode active" id="btnModeAuto" onclick="setGPSMode('auto')">📡 Automático</button>
+      <button class="btn-gps-mode" id="btnModeManual" onclick="setGPSMode('manual')">✏️ Manual</button>
+    </div>
+    <div id="panelGPSAuto">
+      <div class="gps-box">
+        <div class="gps-dot" id="gpsDot"></div>
+        <div class="gps-text" id="gpsText">Presiona "Obtener" para capturar ubicación</div>
+        <button class="btn-gps" onclick="getGPS()">📍 Obtener</button>
+      </div>
+    </div>
+    <div id="panelGPSManual" style="display:none">
+      <div class="gps-box" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div style="display:flex;gap:8px">
+          <div class="field" style="margin:0;flex:1">
+            <label style="font-size:11px">Latitud</label>
+            <input type="number" id="latManual" placeholder="Ej: 4.710989" step="0.000001" style="font-size:13px">
+          </div>
+          <div class="field" style="margin:0;flex:1">
+            <label style="font-size:11px">Longitud</label>
+            <input type="number" id="lngManual" placeholder="Ej: -74.072092" step="0.000001" style="font-size:13px">
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div class="gps-text" id="gpsTextManual" style="margin:0;flex:1">Ingresa las coordenadas y confirma</div>
+          <button class="btn-gps" onclick="confirmarManual()">✅ Confirmar</button>
+        </div>
+      </div>
+    </div>
+    <input type="hidden" id="lat">
+    <input type="hidden" id="lng">
+    <input type="hidden" id="accuracy">
+  </div>
+
+  <div class="card">
+    <div class="card-title">📷 Foto de la Luminaria</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn-gps" onclick="abrirCamara()" style="flex:1;text-align:center;padding:10px 8px">📷 Tomar Foto</button>
+      <button class="btn-gps" onclick="seleccionarGaleria()" style="flex:1;text-align:center;padding:10px 8px">🖼 Galería</button>
+    </div>
+    <input type="file" id="inputCamara" accept="image/*" capture="environment" style="display:none" onchange="procesarFoto(this)">
+    <input type="file" id="inputGaleria" accept="image/*" style="display:none" onchange="procesarFoto(this)">
+    <div id="previewFoto" style="display:none">
+      <img id="imgPreview" style="width:100%;border-radius:8px;max-height:220px;object-fit:cover;border:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <span style="font-size:12px;color:var(--text2);flex:1" id="fotoNombre">—</span>
+        <button class="btn-gps" onclick="eliminarFoto()" style="color:var(--danger);border-color:var(--danger)">✕ Quitar</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" onclick="guardar()">✅ Guardar y Enviar a la Nube</button>
+  <button class="btn btn-secondary" onclick="limpiarForm()">🗑 Limpiar formulario</button>
+</div>
+
+<!-- LISTA -->
+<div class="section" id="tab-lista">
+  <div class="stats">
+    <div class="stat"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Total</div></div>
+    <div class="stat"><div class="stat-num" id="statHoy">0</div><div class="stat-label">Hoy</div></div>
+    <div class="stat"><div class="stat-num" id="statPending">0</div><div class="stat-label">Pendientes</div></div>
+  </div>
+  <div id="listaContainer"></div>
+  <button class="btn-discreet" onclick="eliminarRegistrosHoy()">🗑 Eliminar registros de hoy</button>
+</div>
+
+<!-- EXPORTAR -->
+<div class="section" id="tab-exportar">
+  <div class="info-box" style="margin-bottom:16px">
+    💾 <strong>Respaldo local:</strong> Descarga el Excel desde aquí aunque no haya internet. Los datos en la nube se guardan automáticamente.
+  </div>
+  <div id="exportContainer"></div>
+</div>
+
+<!-- CONFIG -->
+<div class="section" id="tab-config">
+  <div class="card">
+    <div class="card-title">🔗 Conexión con OneDrive / Power Automate</div>
+
+    <div class="info-box">
+      <strong>¿Cómo funciona?</strong><br>
+      Cada registro se envía automáticamente a un flujo de Power Automate que escribe una fila en tu Excel de OneDrive. Todos los técnicos comparten el mismo archivo.
+    </div>
+
+    <div class="field">
+      <label>URL del Webhook (Power Automate)</label>
+      <input type="url" class="webhook-input" id="webhookUrl" placeholder="https://prod-XX.westus.logic.azure.com/workflows/..." oninput="saveWebhook()">
+    </div>
+
+    <button class="btn btn-primary" onclick="testWebhook()" style="margin-bottom:8px">🧪 Probar conexión</button>
+    <button class="btn btn-secondary" onclick="retrySend()">↻ Reenviar pendientes (sin conexión)</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📋 Cómo configurar Power Automate</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <strong>Abre Power Automate</strong>
+        Ve a <a href="https://make.powerautomate.com" target="_blank" style="color:var(--accent)">make.powerautomate.com</a> con tu cuenta Microsoft 365.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <strong>Crea un flujo nuevo</strong>
+        Clic en "Crear" → "Flujo de nube instantáneo" → selecciona el disparador:<br>
+        <em style="color:var(--accent)">"Cuando se recibe una solicitud HTTP"</em>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <strong>Pega este esquema JSON</strong> en "Cuerpo JSON de solicitud":
+        <div class="code-block">{
+  "type": "object",
+  "properties": {
+    "fecha":         {"type": "string"},
+    "hora":          {"type": "string"},
+    "sticker":       {"type": "string"},
+    "transformador": {"type": "string"},
+    "potencia":      {"type": "number"},
+    "tipo":          {"type": "string"},
+    "estado":        {"type": "string"},
+    "latitud":       {"type": "string"},
+    "longitud":      {"type": "string"},
+    "precision_m":   {"type": "string"},
+    "maps_link":     {"type": "string"},
+    "tecnico":       {"type": "string"},
+    "observaciones": {"type": "string"},
+    "tiene_foto":    {"type": "string"}
+  }
+}</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-text">
+        <strong>Agrega una acción: "Agregar una fila a una tabla"</strong>
+        Conector: <em style="color:var(--accent)">Excel Online (Business)</em><br>
+        Selecciona tu OneDrive, elige el archivo Excel y la tabla donde guardar los datos.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-text">
+        <strong>Copia la URL del webhook</strong>
+        Guarda el flujo, copia la URL generada y pégala arriba en esta app.
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="info-box">
+      💡 <strong>Tip:</strong> Crea primero el archivo Excel en OneDrive con una tabla que tenga estas columnas: Fecha, Hora, Sticker, Transformador, Potencia, Tipo, Estado, Latitud, Longitud, Precisión GPS, Google Maps, Técnico, Observaciones.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">👤 Mi perfil</div>
+    <div class="field">
+      <label>Mi nombre</label>
+      <input type="text" id="inputNombreConfig" placeholder="Tu nombre" oninput="saveNombre()">
+    </div>
+    <button class="btn-discreet" onclick="cerrarSesion()">🚪 Cerrar sesión</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🗄 Datos locales</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Los registros se guardan en este dispositivo como respaldo. Puedes limpiarlos después de exportar.</div>
+    <button class="btn btn-danger-outline" onclick="limpiarDB()">⚠️ Borrar todos los datos locales</button>
+  </div>
+</div>
+
+<!-- TAB MAPA -->
+<div class="section" id="tab-mapa" style="padding:0;display:flex;flex-direction:column;height:calc(100vh - 110px)">
+  <div style="display:flex;gap:8px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;align-items:center;flex-wrap:wrap">
+    <span style="font-size:13px;color:var(--text2);flex:1">Luminarias registradas con GPS</span>
+    <button onclick="centrarMapa()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer">📍 Centrar</button>
+    <select id="mapaFiltroEstado" onchange="actualizarMapa()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:13px">
+      <option value="">Todos los estados</option>
+      <option value="Bueno">✅ Bueno</option>
+      <option value="Regular">⚠️ Regular</option>
+      <option value="Malo">❌ Malo</option>
+    </select>
+  </div>
+  <div id="mapaContainer" style="flex:1;width:100%;"></div>
+  <div id="mapaInfo" style="padding:8px 16px;background:var(--surface);border-top:1px solid var(--border);font-size:12px;color:var(--text2);flex-shrink:0;text-align:center">
+    Cargando mapa...
+  </div>
+</div>
+
+<!-- MODAL USUARIO -->
+<div class="modal-overlay open" id="modalUsuario">
+  <div class="modal">
+    <h2>👤 Identificación</h2>
+    <p>Ingresa tu nombre para identificar tus registros en la nube y el Excel.</p>
+    <input type="text" id="inputNombre" placeholder="Tu nombre completo" maxlength="50">
+    <button class="btn btn-primary" onclick="setUsuario()" style="margin-bottom:0">Entrar →</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DB_KEY = 'luminarias_db_v2';
+let usuario = '';
+
+
+// ---- STORAGE FALLBACK (funciona con file:// y sin localStorage) ----
+const _mem = {};
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch(e) { return _mem[k]||null; } },
+  set(k,v) { try { localStorage.setItem(k,v); return true; } catch(e) { _mem[k]=v; console.warn('Fallo al guardar en localStorage, usando memoria temporal (se perderá al recargar):', e); return false; } },
+  remove(k) { try { localStorage.removeItem(k); } catch(e) { delete _mem[k]; } }
+};
+
+// ---- INIT ----
+window.onload = () => {
+  usuario = store.get('lum_usuario') || '';
+  if (usuario) {
+    document.getElementById('modalUsuario').classList.remove('open');
+    document.getElementById('headerUser').textContent = '👤 ' + usuario;
+    document.getElementById('inputNombreConfig').value = usuario;
+  }
+  const hoy = new Date().toISOString().split('T')[0];
+  document.getElementById('fecha').value = hoy;
+
+  const wh = store.get('lum_webhook') || '';
+  document.getElementById('webhookUrl').value = wh;
+
+  updateSyncBar();
+  renderLista();
+  renderExportar();
+};
+console.log("LLEGUÉ A SETUSUARIO");
+function setUsuario() {
+  const v = document.getElementById('inputNombre').value.trim();
+  if (!v) { alert('Por favor ingresa tu nombre'); return; }
+  usuario = v;
+  store.set('lum_usuario', v);
+  document.getElementById('modalUsuario').classList.remove('open');
+  document.getElementById('headerUser').textContent = '👤 ' + usuario;
+  document.getElementById('inputNombreConfig').value = v;
+}
+
+function saveNombre() {
+  const v = document.getElementById('inputNombreConfig').value.trim();
+  if (v) { usuario = v; store.set('lum_usuario', v); document.getElementById('headerUser').textContent = '👤 ' + v; }
+}
+
+function saveWebhook() {
+  const v = document.getElementById('webhookUrl').value.trim();
+  store.set('lum_webhook', v);
+  updateSyncBar();
+}
+
+// ---- TABS ----
+function switchTab(name) {
+  const names = ['registro','lista','exportar','config','mapa'];
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', names[i] === name));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'lista') renderLista();
+  if (name === 'exportar') renderExportar();
+  if (name === 'mapa') iniciarMapa();
+}
+
+// ---- MAPA OPENSTREETMAP (Leaflet.js) ----
+let mapaObj = null;
+let mapaMarkers = [];
+let mapaTileLayers = null;
+
+function iniciarMapa() {
+  const db = getDB().filter(r => r.lat && r.lng);
+  const info = document.getElementById('mapaInfo');
+  const cont = document.getElementById('mapaContainer');
+
+  if (!db.length) {
+    cont.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:var(--text2)">
+      <div style="font-size:48px">📍</div>
+      <p style="font-size:14px">No hay registros con coordenadas GPS aún.</p>
+    </div>`;
+    info.textContent = 'Sin datos con GPS';
+    return;
+  }
+
+  // Si el mapa se había limpiado (innerHTML sobrescrito porque no había datos), aseguramos el contenedor
+  if (!mapaObj && !document.getElementById('mapaContainer').querySelector('.leaflet-container')) {
+    cont.innerHTML = '';
+  }
+
+  _renderMapa();
+}
+
+function _renderMapa() {
+  const filtro = document.getElementById('mapaFiltroEstado').value;
+  let db = getDB().filter(r => r.lat && r.lng);
+  if (filtro) db = db.filter(r => r.estado === filtro);
+
+  const info = document.getElementById('mapaInfo');
+  const cont = document.getElementById('mapaContainer');
+
+  if (!db.length) {
+    info.textContent = 'No hay registros para el filtro seleccionado';
+    if (mapaObj) { mapaMarkers.forEach(m => mapaObj.removeLayer(m)); mapaMarkers = []; }
+    return;
+  }
+
+  const centro = [parseFloat(db[0].lat), parseFloat(db[0].lng)];
+
+  if (!mapaObj) {
+    cont.style.height = '100%';
+    mapaObj = L.map(cont, {
+      center: centro,
+      zoom: 15,
+      gestureHandling: false
+    });
+
+    // Capas base (varios proveedores de tiles OpenStreetMap)
+    const capaCalle = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    });
+    const capaSatelite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri'
+    });
+    const capaTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap'
+    });
+
+    capaCalle.addTo(mapaObj);
+    mapaTileLayers = { 'Calles': capaCalle, 'Satélite': capaSatelite, 'Topográfico': capaTopo };
+    L.control.layers(mapaTileLayers).addTo(mapaObj);
+    L.control.scale({ imperial: false }).addTo(mapaObj);
+
+    // Forzar recalculo de tamaño (por si el contenedor estaba oculto al iniciar)
+    setTimeout(() => mapaObj.invalidateSize(), 100);
+  }
+
+  // Borrar marcadores anteriores
+  mapaMarkers.forEach(m => mapaObj.removeLayer(m));
+  mapaMarkers = [];
+
+  const bounds = [];
+
+  db.forEach(r => {
+    const lat = parseFloat(r.lat), lng = parseFloat(r.lng);
+    bounds.push([lat, lng]);
+
+    // Color según estado
+    const color = r.estado === 'Bueno' ? '#22c55e' :
+                  r.estado === 'Regular' ? '#f59e0b' :
+                  r.estado === 'Malo' ? '#ef4444' : '#3b82f6';
+
+    const marker = L.circleMarker([lat, lng], {
+      radius: 10,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 0.9
+    }).addTo(mapaObj);
+
+    const fotoHtml = r.foto
+      ? `<img src="${r.foto}" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-top:8px">`
+      : '';
+    marker.bindPopup(`
+      <div style="font-family:sans-serif;min-width:180px;color:#111">
+        <div style="font-weight:700;font-size:14px;margin-bottom:4px">🏷 ${r.sticker}</div>
+        <div style="font-size:12px;color:#555">🔌 ${r.transformador} · ⚡${r.potencia}W</div>
+        <div style="font-size:12px;color:#555">💡 ${r.tipo||'-'} · ${r.estado||'-'}</div>
+        <div style="font-size:12px;color:#555">📅 ${r.fecha} ${r.hora}</div>
+        <div style="font-size:12px;color:#555">👤 ${r.usuario}</div>
+        ${r.obs ? `<div style="font-size:12px;color:#555;margin-top:4px">📝 ${r.obs}</div>` : ''}
+        ${fotoHtml}
+        <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}" target="_blank"
+           style="display:block;margin-top:8px;font-size:12px;color:#1a73e8;text-decoration:none">
+          📍 Ver en OpenStreetMap
+        </a>
+      </div>
+    `);
+
+    mapaMarkers.push(marker);
+  });
+
+  mapaObj.fitBounds(bounds, { padding: [30, 30] });
+  if (db.length === 1) mapaObj.setZoom(17);
+  info.textContent = `${db.length} luminaria${db.length !== 1 ? 's' : ''} mostrada${db.length !== 1 ? 's' : ''} · Toca un punto para ver detalles`;
+}
+
+function actualizarMapa() {
+  if (mapaObj) _renderMapa();
+}
+
+function centrarMapa() {
+  if (!mapaObj || !mapaMarkers.length) return;
+  const bounds = mapaMarkers.map(m => m.getLatLng());
+  mapaObj.fitBounds(bounds, { padding: [30, 30] });
+  if (mapaMarkers.length === 1) mapaObj.setZoom(17);
+}
+
+// ---- GPS ----
+function getGPS() {
+  const dot = document.getElementById('gpsDot');
+  const txt = document.getElementById('gpsText');
+  dot.className = 'gps-dot loading';
+  txt.textContent = 'Obteniendo ubicación...';
+  if (!navigator.geolocation) {
+    dot.className = 'gps-dot err';
+    txt.textContent = 'GPS no disponible';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lt = pos.coords.latitude.toFixed(6);
+      const lg = pos.coords.longitude.toFixed(6);
+      const ac = Math.round(pos.coords.accuracy);
+      document.getElementById('lat').value = lt;
+      document.getElementById('lng').value = lg;
+      document.getElementById('accuracy').value = ac;
+      dot.className = 'gps-dot ok';
+      txt.innerHTML = `Ubicación capturada ✓<strong>${lt}, ${lg}</strong><span style="font-size:11px">Precisión: ±${ac}m</span>`;
+    },
+    err => {
+      dot.className = 'gps-dot err';
+      const msgs = { 1: 'Permiso denegado', 2: 'Posición no disponible', 3: 'Tiempo agotado' };
+      txt.textContent = 'Error: ' + (msgs[err.code] || 'Desconocido');
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+// ---- GPS MODE ----
+let gpsMode = 'auto';
+function setGPSMode(mode) {
+  gpsMode = mode;
+  document.getElementById('btnModeAuto').classList.toggle('active', mode === 'auto');
+  document.getElementById('btnModeManual').classList.toggle('active', mode === 'manual');
+  document.getElementById('panelGPSAuto').style.display = mode === 'auto' ? '' : 'none';
+  document.getElementById('panelGPSManual').style.display = mode === 'manual' ? '' : 'none';
+  // Limpiar coordenadas al cambiar modo
+  document.getElementById('lat').value = '';
+  document.getElementById('lng').value = '';
+  document.getElementById('accuracy').value = '';
+  if (mode === 'auto') {
+    document.getElementById('gpsDot').className = 'gps-dot';
+    document.getElementById('gpsText').textContent = 'Presiona "Obtener" para capturar ubicación';
+  } else {
+    document.getElementById('gpsTextManual').textContent = 'Ingresa las coordenadas y confirma';
+    document.getElementById('latManual').value = '';
+    document.getElementById('lngManual').value = '';
+    // Verificar si geolocalización está disponible
+    if (!navigator.geolocation) {
+      document.getElementById('gpsTextManual').textContent = '⚠️ GPS no disponible en este dispositivo';
+    }
+  }
+}
+
+function confirmarManual() {
+  const latVal = document.getElementById('latManual').value.trim();
+  const lngVal = document.getElementById('lngManual').value.trim();
+  const txt = document.getElementById('gpsTextManual');
+  if (!latVal || !lngVal) { txt.textContent = '⚠️ Ingresa latitud y longitud'; return; }
+  const lt = parseFloat(latVal);
+  const lg = parseFloat(lngVal);
+  if (isNaN(lt) || isNaN(lg)) { txt.textContent = '⚠️ Coordenadas inválidas'; return; }
+  if (lt < -90 || lt > 90) { txt.textContent = '⚠️ Latitud fuera de rango (-90 a 90)'; return; }
+  if (lg < -180 || lg > 180) { txt.textContent = '⚠️ Longitud fuera de rango (-180 a 180)'; return; }
+  document.getElementById('lat').value = lt.toFixed(6);
+  document.getElementById('lng').value = lg.toFixed(6);
+  document.getElementById('accuracy').value = 'manual';
+  txt.innerHTML = `✅ Coordenadas confirmadas<strong>${lt.toFixed(6)}, ${lg.toFixed(6)}</strong><span style="font-size:11px">Ingreso manual</span>`;
+}
+
+// ---- CÁMARA / FOTO ----
+let fotoBase64 = '';
+
+function abrirCamara() {
+  document.getElementById('inputCamara').value = '';
+  document.getElementById('inputCamara').click();
+}
+
+function seleccionarGaleria() {
+  document.getElementById('inputGaleria').value = '';
+  document.getElementById('inputGaleria').click();
+}
+
+function procesarFoto(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      // Redimensionar/comprimir para no reventar el límite de localStorage (~5MB)
+      const MAX_DIM = 1280;
+      let w = img.width, h = img.height;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        if (w > h) { h = Math.round(h * MAX_DIM / w); w = MAX_DIM; }
+        else { w = Math.round(w * MAX_DIM / h); h = MAX_DIM; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      fotoBase64 = canvas.toDataURL('image/jpeg', 0.7);
+      document.getElementById('imgPreview').src = fotoBase64;
+      document.getElementById('fotoNombre').textContent = file.name;
+      document.getElementById('previewFoto').style.display = '';
+      showToast('📷 Foto cargada ✓', 'success');
+    };
+    img.onerror = function() {
+      showToast('⚠️ No se pudo procesar la foto', 'error');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function eliminarFoto() {
+  fotoBase64 = '';
+  document.getElementById('imgPreview').src = '';
+  document.getElementById('fotoNombre').textContent = '—';
+  document.getElementById('previewFoto').style.display = 'none';
+  document.getElementById('inputCamara').value = '';
+  document.getElementById('inputGaleria').value = '';
+}
+
+// ---- DB ----
+function getDB() { try { return JSON.parse(store.get(DB_KEY)) || []; } catch { return []; } }
+function saveDB(data) {
+  const ok = store.set(DB_KEY, JSON.stringify(data));
+  document.getElementById('totalBadge').textContent = data.length;
+  updateSyncBar();
+  return ok;
+}
+
+// ---- GUARDAR ----
+async function guardar() {
+  if (!usuario) { document.getElementById('modalUsuario').classList.add('open'); return; }
+
+  const fecha = document.getElementById('fecha').value;
+  const transformador = document.getElementById('transformador').value.trim();
+  const potencia = document.getElementById('potencia').value.trim();
+  const sticker = document.getElementById('sticker').value.trim();
+  const tipo = document.getElementById('tipo').value;
+  const estado = document.getElementById('estado').value;
+  const obs = document.getElementById('obs').value.trim();
+  const lt = document.getElementById('lat').value;
+  const lg = document.getElementById('lng').value;
+  const ac = document.getElementById('accuracy').value;
+  
+
+  if (!fecha) { showToast('⚠️ Selecciona fecha', 'error'); return; }
+  if (!transformador) { showToast('⚠️ Ingresa el transformador', 'error'); return; }
+  if (!potencia) { showToast('⚠️ Ingresa la potencia', 'error'); return; }
+  if (!sticker) { showToast('⚠️ Ingresa el sticker', 'error'); return; }
+  if (!lt || !lg) {showToast('⚠️ Debe obtener o ingresar las coordenadas GPS antes de guardar', 'error');return;}
+
+  const registro = {
+    id: Date.now(),
+    fecha, transformador, potencia: Number(potencia), sticker, tipo, estado, obs,
+    lat: lt, lng: lg, accuracy: ac, usuario,
+    foto: fotoBase64,
+    hora: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+    syncStatus: 'pending' // pending | synced | error
+  };
+  // Guardar local primero
+  const db = getDB();
+  db.push(registro);
+  const persistido = saveDB(db);
+
+  if (!persistido) {
+    showToast('⚠️ No hay espacio de almacenamiento — el registro NO se guardó de forma permanente. Envíalo a la nube o libera espacio (Config → Borrar datos locales antiguos).', 'error');
+  } else {
+    showToast('💾 Guardado localmente...', 'success');
+  }
+
+  renderLista();
+
+  // Solo limpiar cuando se confirme el guardado
+  limpiarForm(false);
+
+  // Intentar enviar a la nube
+  await sendToCloud(registro);
+}
+
+// ---- CLOUD SYNC ----
+async function sendToCloud(registro) {
+  const webhook = store.get('lum_webhook') || '';
+  if (!webhook) {
+    showToast('⚠️ Guardado local — configura el webhook', 'warn');
+    return false;
+  }
+
+  setSyncStatus('syncing');
+
+  const payload = {
+    fecha: registro.fecha,
+    hora: registro.hora,
+    sticker: registro.sticker,
+    transformador: registro.transformador,
+    potencia: registro.potencia,
+    tipo: registro.tipo,
+    estado: registro.estado,
+    latitud: registro.lat,
+    longitud: registro.lng,
+    precision_m: registro.accuracy,
+    maps_link: registro.lat ? `https://www.openstreetmap.org/?mlat=${registro.lat}&mlon=${registro.lng}#map=18/${registro.lat}/${registro.lng}` : '',
+    tecnico: registro.usuario,
+    observaciones: registro.obs,
+    tiene_foto: registro.foto ? 'Sí' : 'No'
+  };
+
+  try {
+    const res = await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const db = getDB();
+    const idx = db.findIndex(r => r.id === registro.id);
+    if (idx !== -1) {
+      db[idx].syncStatus = res.ok ? 'synced' : 'error';
+      saveDB(db);
+    }
+
+    if (res.ok) {
+      showToast('☁️ Enviado a OneDrive ✓', 'success');
+      updateSyncBar();
+      return true;
+    } else {
+      showToast('❌ Error al enviar — guardado local', 'error');
+      updateSyncBar();
+      return false;
+    }
+  } catch (e) {
+    const db = getDB();
+    const idx = db.findIndex(r => r.id === registro.id);
+    if (idx !== -1) { db[idx].syncStatus = 'error'; saveDB(db); }
+    showToast('📵 Sin internet — guardado local', 'warn');
+    updateSyncBar();
+    return false;
+  }
+}
+
+async function retrySend() {
+  const db = getDB();
+  const pending = db.filter(r => r.syncStatus !== 'synced');
+  if (!pending.length) { showToast('✅ Todo está sincronizado', 'success'); return; }
+
+  let ok = 0;
+  for (const r of pending) {
+    const result = await sendToCloud(r);
+    if (result) ok++;
+  }
+  showToast(`↻ Reenviados: ${ok}/${pending.length}`, ok === pending.length ? 'success' : 'warn');
+  renderLista();
+}
+
+async function testWebhook() {
+  const webhook = document.getElementById('webhookUrl').value.trim();
+  if (!webhook) { showToast('⚠️ Pega primero la URL del webhook', 'error'); return; }
+  setSyncStatus('syncing');
+  try {
+    const res = await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fecha: new Date().toISOString().split('T')[0],
+        hora: new Date().toLocaleTimeString('es-CO', {hour:'2-digit',minute:'2-digit'}),
+        sticker: 'TEST-001', transformador: 'PRUEBA', potencia: 0,
+        tipo: 'LED', estado: 'Bueno', latitud: '', longitud: '',
+        precision_m: '', maps_link: '', tecnico: usuario || 'Prueba', observaciones: 'Registro de prueba de conexión'
+      })
+    });
+    if (res.ok) {
+      setSyncStatus('ok');
+      showToast('✅ Conexión exitosa con Power Automate', 'success');
+    } else {
+      setSyncStatus('err');
+      showToast('❌ Error HTTP ' + res.status, 'error');
+    }
+  } catch (e) {
+    setSyncStatus('err');
+    showToast('❌ No se pudo conectar: ' + e.message, 'error');
+  }
+}
+
+function setSyncStatus(state) {
+  const dot = document.getElementById('syncDot');
+  dot.className = 'sync-dot ' + (state === 'syncing' ? 'loading' : state === 'ok' ? 'ok' : state === 'err' ? 'err' : state === 'pending' ? 'pending' : '');
+}
+
+function updateSyncBar() {
+  const db = getDB();
+  const webhook = store.get('lum_webhook') || '';
+  const pending = db.filter(r => r.syncStatus !== 'synced').length;
+  const dot = document.getElementById('syncDot');
+  const label = document.getElementById('syncLabel');
+  const pendingEl = document.getElementById('pendingCount');
+  const retryBtn = document.getElementById('btnRetry');
+
+  if (!webhook) {
+    dot.className = 'sync-dot';
+    label.textContent = 'Sin webhook configurado — ve a ⚙️ Config';
+    pendingEl.style.display = 'none';
+    retryBtn.style.display = 'none';
+    return;
+  }
+  if (pending > 0) {
+    dot.className = 'sync-dot pending';
+    label.textContent = `Webhook listo — ${pending} sin sincronizar`;
+    pendingEl.textContent = pending;
+    pendingEl.style.display = 'inline';
+    retryBtn.style.display = 'inline';
+  } else {
+    dot.className = 'sync-dot ok';
+    label.textContent = 'Todo sincronizado con OneDrive ✓';
+    pendingEl.style.display = 'none';
+    retryBtn.style.display = 'none';
+  }
+}
+
+// ---- RENDER LISTA ----
+function renderLista() {
+  const db = getDB();
+  const cont = document.getElementById('listaContainer');
+  document.getElementById('totalBadge').textContent = db.length;
+
+  const hoy = new Date().toISOString().split('T')[0];
+  const pending = db.filter(r => r.syncStatus !== 'synced').length;
+  document.getElementById('statTotal').textContent = db.length;
+  document.getElementById('statHoy').textContent = db.filter(r => r.fecha === hoy).length;
+  document.getElementById('statPending').textContent = pending;
+
+  if (!db.length) {
+    cont.innerHTML = `<div class="empty"><div class="empty-icon">💡</div><p>Sin registros. Ve a "Registrar".</p></div>`;
+    return;
+  }
+
+  const byDay = {};
+  db.forEach(r => { if (!byDay[r.fecha]) byDay[r.fecha] = []; byDay[r.fecha].push(r); });
+  const dias = Object.keys(byDay).sort((a,b) => b.localeCompare(a));
+
+  let html = '';
+  dias.forEach(dia => {
+    const regs = byDay[dia];
+    html += `<div class="day-group">
+      <div class="day-header"><span>${dia === hoy ? '📅 Hoy — ' : ''}${fmtDate(dia)}</span>
+      <span class="day-count">${regs.length} registro${regs.length!==1?'s':''}</span></div>`;
+    regs.forEach((r, i) => {
+      const chipClass = r.syncStatus === 'synced' ? 'chip-synced' : r.syncStatus === 'error' ? 'chip-error' : 'chip-pending';
+      const chipText = r.syncStatus === 'synced' ? '☁️ En OneDrive' : r.syncStatus === 'error' ? '❌ Error al enviar' : '⏳ Pendiente';
+      html += `<div class="record ${r.syncStatus === 'synced' ? 'synced' : 'pending-sync'}">
+        <div class="record-num">${i+1}</div>
+        <div class="record-info">
+          <div class="record-sticker">🏷 ${r.sticker}</div>
+          <div class="record-meta">
+            <span>🔌 ${r.transformador}</span><span>⚡ ${r.potencia}W</span>
+            ${r.tipo ? `<span>💡 ${r.tipo}</span>` : ''}${r.estado ? `<span>📊 ${r.estado}</span>` : ''}
+          </div>
+          <div class="record-meta"><span>👤 ${r.usuario}</span><span>🕐 ${r.hora}</span></div>
+          ${r.lat ? `<div class="record-coords">📍 ${r.lat}, ${r.lng} (±${r.accuracy}m)</div>`
+                  : `<div class="record-coords" style="color:var(--danger)">📍 Sin coordenadas</div>`}
+          ${r.obs ? `<div class="record-meta" style="margin-top:4px">📝 ${r.obs}</div>` : ''}
+          ${r.foto ? `<img src="${r.foto}" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-top:6px;border:1px solid var(--border)">` : ''}
+          <span class="sync-status-chip ${chipClass}">${chipText}</span>
+        </div>
+        <button class="btn-del" onclick="eliminar(${r.id})">✕</button>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  cont.innerHTML = html;
+}
+
+function eliminar(id) {
+  if (!confirm('¿Eliminar este registro?')) return;
+  const db = getDB().filter(r => r.id !== id);
+  saveDB(db);
+  renderLista();
+  renderExportar();
+  showToast('🗑 Eliminado', 'error');
+}
+
+function limpiarDB() {
+  if (!confirm('¿Borrar TODOS los datos locales? Los datos ya enviados a OneDrive no se borran.')) return;
+  store.remove(DB_KEY);
+  saveDB([]);
+  renderLista();
+  renderExportar();
+  showToast('🗑 Datos locales borrados', 'error');
+}
+
+function eliminarRegistrosHoy() {
+  const hoy = new Date().toISOString().split('T')[0];
+  const db = getDB();
+  const cantidadHoy = db.filter(r => r.fecha === hoy).length;
+  if (!cantidadHoy) { showToast('No hay registros de hoy', 'warn'); return; }
+  if (!confirm(`¿Eliminar los ${cantidadHoy} registro(s) de hoy (${fmtDate(hoy)})? Esta acción no se puede deshacer.`)) return;
+  const nuevaDB = db.filter(r => r.fecha !== hoy);
+  saveDB(nuevaDB);
+  renderLista();
+  renderExportar();
+  showToast('🗑 Registros de hoy eliminados', 'error');
+}
+
+function cerrarSesion() {
+  if (!confirm('¿Cerrar sesión? Deberás ingresar tu nombre de nuevo para seguir registrando.')) return;
+  store.remove('lum_usuario');
+  usuario = '';
+  document.getElementById('inputNombre').value = '';
+  document.getElementById('inputNombreConfig').value = '';
+  document.getElementById('headerUser').textContent = 'Sin identificar';
+  document.getElementById('modalUsuario').classList.add('open');
+  showToast('👋 Sesión cerrada', 'warn');
+}
+
+// ---- EXPORT EXCEL CON IMÁGENES (ExcelJS) ----
+async function loadExcelJS() {
+  if (window.ExcelJS) return;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+// Convierte data URL base64 a ArrayBuffer
+function dataURLtoBuffer(dataURL) {
+  const base64 = dataURL.split(',')[1];
+  const binary = atob(base64);
+  const buf = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+  return buf.buffer;
+}
+
+// Detecta el tipo de imagen desde el data URL
+function getImageExt(dataURL) {
+  if (dataURL.startsWith('data:image/png')) return 'png';
+  if (dataURL.startsWith('data:image/gif')) return 'gif';
+  return 'jpeg';
+}
+
+// Construye una hoja ExcelJS con imágenes embebidas
+async function buildSheetExcelJS(wb, sheetName, registros) {
+  const ws = wb.addWorksheet(sheetName);
+
+  // Encabezados
+  const headers = ['#','Fecha','Hora','Sticker','Transformador','Potencia (W)',
+    'Tipo','Estado','Latitud','Longitud','Precisión GPS (m)','Google Maps',
+    'Técnico','Observaciones','Estado Nube','Foto'];
+  ws.addRow(headers);
+
+  // Estilo encabezado
+  const headerRow = ws.getRow(1);
+  headerRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1a1f2e' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+  });
+  headerRow.height = 22;
+
+  // Anchos de columna
+  const colWidths = [4,12,8,16,14,11,12,14,14,14,14,42,20,30,14,20];
+  colWidths.forEach((w, i) => { ws.getColumn(i+1).width = w; });
+
+  // Columna de foto: ancho extra
+  ws.getColumn(16).width = 22;
+
+  for (let i = 0; i < registros.length; i++) {
+    const r = registros[i];
+    const rowNum = i + 2;
+    const rowData = [
+      i+1, r.fecha, r.hora, r.sticker, r.transformador, r.potencia,
+      r.tipo, r.estado, r.lat, r.lng, r.accuracy,
+      r.lat ? `https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lng}#map=18/${r.lat}/${r.lng}` : '',
+      r.usuario, r.obs,
+      r.syncStatus === 'synced' ? 'Sincronizado' : r.syncStatus === 'error' ? 'Error' : 'Pendiente',
+      r.foto ? '(ver imagen →)' : ''
+    ];
+    const row = ws.addRow(rowData);
+    row.height = r.foto ? 80 : 20;
+    row.alignment = { vertical: 'middle' };
+
+    // Enlace OpenStreetMap
+    if (r.lat) {
+      const cell = row.getCell(12);
+      cell.value = { text: 'Ver en Maps', hyperlink: `https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lng}#map=18/${r.lat}/${r.lng}` };
+      cell.font = { color: { argb: 'FF0563C1' }, underline: true };
+    }
+
+    // Incrustar imagen si existe
+    if (r.foto) {
+      try {
+        const ext = getImageExt(r.foto);
+        const imgBuf = dataURLtoBuffer(r.foto);
+        const imageId = wb.addImage({ buffer: imgBuf, extension: ext });
+        ws.addImage(imageId, {
+          tl: { col: 15, row: rowNum - 1 },  // columna P (índice 15), fila actual
+          br: { col: 16, row: rowNum },
+          editAs: 'oneCell'
+        });
+      } catch(e) { /* imagen inválida, ignorar */ }
+    }
+  }
+  return ws;
+}
+
+async function exportarDiaExcelJS(dia) {
+  await loadExcelJS();
+  const db = getDB().filter(r => r.fecha === dia);
+  if (!db.length) return;
+  showToast('⏳ Generando Excel con fotos...', 'warn');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Luminarias App';
+  wb.created = new Date();
+  await buildSheetExcelJS(wb, dia.replace(/-/g,'_'), db);
+  const buf = await wb.xlsx.writeBuffer();
+  descargarBuffer(buf, `Luminarias_${dia}.xlsx`);
+}
+
+async function exportarTodoExcelJS() {
+  await loadExcelJS();
+  const db = getDB();
+  if (!db.length) return;
+  showToast('⏳ Generando Excel completo con fotos...', 'warn');
+
+  const byDay = {};
+  db.forEach(r => { if (!byDay[r.fecha]) byDay[r.fecha] = []; byDay[r.fecha].push(r); });
+  const dias = Object.keys(byDay).sort();
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Luminarias App';
+  wb.created = new Date();
+
+  // Hoja resumen
+  const wsRes = wb.addWorksheet('RESUMEN');
+  wsRes.addRow(['Fecha','Día','Registros','En OneDrive','Pendientes','Técnicos']);
+  const hRes = wsRes.getRow(1);
+  hRes.eachCell(c => {
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1a1f2e' } };
+  });
+  dias.forEach(d => {
+    wsRes.addRow([
+      d, fmtDate(d), byDay[d].length,
+      byDay[d].filter(r=>r.syncStatus==='synced').length,
+      byDay[d].filter(r=>r.syncStatus!=='synced').length,
+      [...new Set(byDay[d].map(r=>r.usuario))].join(', ')
+    ]);
+  });
+  [12,20,10,12,10,40].forEach((w,i) => { wsRes.getColumn(i+1).width = w; });
+
+  // Hoja por día
+  for (const dia of dias) {
+    await buildSheetExcelJS(wb, dia.replace(/-/g,'_'), byDay[dia]);
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const nombre = `Luminarias_COMPLETO_${new Date().toISOString().split('T')[0]}.xlsx`;
+  descargarBuffer(buf, nombre);
+}
+
+function descargarBuffer(buf, nombre) {
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nombre;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+  showToast('📥 Excel con fotos descargado ✓', 'success');
+}
+
+// ---- EXPORT EXCEL (lista/botones) ----
+function renderExportar() {
+  const db = getDB();
+  const cont = document.getElementById('exportContainer');
+
+  if (!db.length) {
+    cont.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">📊</div>
+        <p>No hay datos para exportar.</p>
+      </div>`;
+    return;
+  }
+
+  const byDay = {};
+  db.forEach(r => { 
+    if (!byDay[r.fecha]) byDay[r.fecha] = []; 
+    byDay[r.fecha].push(r); 
+  });
+
+  const dias = Object.keys(byDay).sort((a,b) => b.localeCompare(a));
+
+  let html = `
+    <button class="btn-export-all" onclick="exportarFotosZIP()" style="margin-bottom:16px">
+      📷 Exportar Fotos ZIP
+    </button>
+    <button class="btn-export-all" onclick="exportarTodoExcelJS()" style="margin-bottom:16px">
+      📦 Exportar TODO — Excel completo con fotos
+    </button>
+  `;
+  dias.forEach(dia => {
+    const synced = byDay[dia].filter(r => r.syncStatus === 'synced').length;
+    const conFoto = byDay[dia].filter(r => r.foto).length;
+    html += `
+      <div class="export-card">
+        <div class="export-day-title">
+          📅 ${fmtDate(dia)}
+        </div>
+
+        <div class="export-day-sub">
+          ${byDay[dia].length} registros · ☁️ ${synced} en OneDrive · 📷 ${conFoto} con foto
+        </div>
+
+        <button class="btn-export" onclick="exportarDiaExcelJS('${dia}')">
+          ⬇️ Descargar Excel con fotos — ${fmtDate(dia)}
+        </button>
+      </div>
+    `;
+  });
+  cont.innerHTML = html;
+}
+
+
+function buildRows(registros) {
+  return registros.map((r, i) => ({
+    '#': i+1, 'Fecha': r.fecha, 'Hora': r.hora, 'Sticker': r.sticker,
+    'Transformador': r.transformador, 'Potencia (W)': r.potencia,
+    'Tipo': r.tipo, 'Estado': r.estado,
+    'Latitud': r.lat, 'Longitud': r.lng, 'Precisión GPS (m)': r.accuracy,
+    'Google Maps': r.lat ? `https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lng}#map=18/${r.lat}/${r.lng}` : '',
+    'Técnico': r.usuario, 'Observaciones': r.obs,
+    'Estado Nube': r.syncStatus === 'synced' ? 'Sincronizado' : r.syncStatus === 'error' ? 'Error' : 'Pendiente'
+  }));
+}
+
+async function exportarDia(dia) {
+  const db = getDB().filter(r => r.fecha === dia);
+  if (!db.length) return;
+  const ws = XLSX.utils.json_to_sheet(buildRows(db));
+  ws['!cols'] = [{wch:4},{wch:12},{wch:8},{wch:16},{wch:14},{wch:11},{wch:12},{wch:14},{wch:14},{wch:14},{wch:14},{wch:42},{wch:20},{wch:30},{wch:14}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, dia.replace(/-/g,'_'));
+  const nombre = `Luminarias_${dia}.xlsx`;
+  await guardarExcel(wb, nombre);
+}
+
+async function exportarTodo() {
+  const db = getDB();
+  if (!db.length) return;
+  const byDay = {};
+  db.forEach(r => { if (!byDay[r.fecha]) byDay[r.fecha] = []; byDay[r.fecha].push(r); });
+  const dias = Object.keys(byDay).sort();
+  const wb = XLSX.utils.book_new();
+  const resumen = dias.map(d => ({
+    'Fecha': d, 'Día': fmtDate(d),
+    'Registros': byDay[d].length,
+    'En OneDrive': byDay[d].filter(r=>r.syncStatus==='synced').length,
+    'Pendientes': byDay[d].filter(r=>r.syncStatus!=='synced').length,
+    'Técnicos': [...new Set(byDay[d].map(r=>r.usuario))].join(', ')
+  }));
+  const wsRes = XLSX.utils.json_to_sheet(resumen);
+  wsRes['!cols'] = [{wch:12},{wch:20},{wch:10},{wch:12},{wch:10},{wch:40}];
+  XLSX.utils.book_append_sheet(wb, wsRes, 'RESUMEN');
+  dias.forEach(dia => {
+    const ws = XLSX.utils.json_to_sheet(buildRows(byDay[dia]));
+    ws['!cols'] = [{wch:4},{wch:12},{wch:8},{wch:16},{wch:14},{wch:11},{wch:12},{wch:14},{wch:14},{wch:14},{wch:14},{wch:42},{wch:20},{wch:30},{wch:14}];
+    XLSX.utils.book_append_sheet(wb, ws, dia.replace(/-/g,'_'));
+  });
+  const nombre = `Luminarias_COMPLETO_${new Date().toISOString().split('T')[0]}.xlsx`;
+  await guardarExcel(wb, nombre);
+}
+ 
+// ---- EXPORTAR FOTOS ZIP ----
+async function exportarFotosZIP() {
+  const db = getDB();
+  const fotos = db.filter(r => r.foto);
+  if (!fotos.length) {
+    showToast('📷 No hay fotos para exportar', 'error');
+    return;
+  }
+  const zip = new JSZip();
+  let contador = 0;
+  fotos.forEach(r => {
+  const transformador = r.transformador || 'SIN_TRANSFORMADOR';
+  const sticker = r.sticker || 'SIN_STICKER';
+  // Carpeta por transformador
+  const carpeta = `Transformador_${transformador}/`;
+  // Detectar extensión de imagen
+  let extension = 'jpg';
+  if (r.foto.startsWith('data:image/png')) {
+    extension = 'png';
+  }
+  // Nombre del archivo
+  const nombreArchivo = `Sticker-${sticker}.${extension}`;
+  // Quitar encabezado Base64
+  const base64 = r.foto.split(',')[1];
+  zip.file(
+    carpeta + nombreArchivo,
+    base64,
+    { base64: true }
+  );
+  contador++;
+});
+  showToast(`📦 Generando ZIP (${contador} fotos)...`, 'success');
+  const contenido = await zip.generateAsync({
+    type: "blob"
+  });
+  saveAs(
+    contenido,
+    `Fotos_Luminarias_${new Date().toISOString().split('T')[0]}.zip`
+  );
+  showToast(`✅ ZIP generado con ${contador} fotos`, 'success');
+} 
+ 
+
+// ---- GUARDAR EXCEL CON SELECTOR DE CARPETA ----
+async function guardarExcel(wb, nombre) {
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/octet-stream' });
+
+  // Intentar File System Access API (Chrome/Edge en Android y PC)
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: nombre,
+        types: [{ description: 'Excel', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      showToast('📥 Excel guardado ✓', 'success');
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // usuario canceló
+      // Si falla, cae al método clásico
+    }
+  }
+
+  // Fallback clásico (Safari iPhone y navegadores sin File System API)
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+  showToast('📥 Excel descargado', 'success');
+}
+
+// ---- LIMPIAR FORM ----
+function limpiarForm(resetFecha = true) {
+  if (resetFecha) {
+    const hoy = new Date().toISOString().split('T')[0];
+    document.getElementById('fecha').value = hoy;
+  }
+  //document.getElementById('transformador').value = '';
+  document.getElementById('potencia').value = '';
+  document.getElementById('sticker').value = '';
+  document.getElementById('tipo').value = '';
+  document.getElementById('estado').value = '';
+  document.getElementById('obs').value = '';
+  document.getElementById('lat').value = '';
+  document.getElementById('lng').value = '';
+  document.getElementById('accuracy').value = '';
+  // Reset GPS panel
+  setGPSMode('auto');
+  // Reset foto
+  eliminarFoto();
+}
+
+// ---- HELPERS ----
+function fmtDate(iso) {
+  const [y,m,d] = iso.split('-');
+  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return `${d} ${meses[+m-1]} ${y}`;
+}
+function showToast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+            .then(reg => {
+                console.log('Service Worker registrado');
+            })
+            .catch(err => {
+                console.error(err);
+            });
+    });
+}
+</script>
+</body>
+</html>
